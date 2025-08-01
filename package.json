@@ -1,7 +1,7 @@
 {
   "name": "@zhoumutou/vite-plugin-mpa",
   "type": "module",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A Vite plugin for Multi-Page Applications (MPA)",
   "author": "zhoumutou",
   "license": "MIT",
