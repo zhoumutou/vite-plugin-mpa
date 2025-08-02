@@ -2,7 +2,7 @@
  * @type {import('lint-staged').Configuration}
  */
 const config = {
-  '**/*.{ts}': 'eslint',
+  '**/*.(ts,md)': 'eslint',
 }
 
 export default config

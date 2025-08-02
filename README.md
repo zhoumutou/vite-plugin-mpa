@@ -1,6 +1,13 @@
 # @zhoumutou/vite-plugin-mpa
 
+[![npm version](https://img.shields.io/npm/v/@zhoumutou/vite-plugin-mpa.svg)](https://www.npmjs.com/package/@zhoumutou/vite-plugin-mpa)
+[![weekly downloads](https://img.shields.io/npm/dw/@zhoumutou/vite-plugin-mpa)](https://www.npmjs.com/package/@zhoumutou/vite-plugin-mpa)
+[![license](https://img.shields.io/npm/l/@zhoumutou/vite-plugin-mpa)](https://github.com/zhoumutou/vite-plugin-mpa/blob/main/LICENSE)
+[![install size](https://packagephobia.com/badge?p=@zhoumutou/vite-plugin-mpa)](https://packagephobia.com/result?p=@zhoumutou/vite-plugin-mpa)
+
 A Vite plugin for Multi-Page Applications (MPA) that automatically configures entry points, handles HTML templates, and sets up development server routing.
+
+English | [中文](./README.zh_CN.md)
 
 ## Features
 
@@ -105,28 +112,14 @@ The plugin:
    - Generates HTML files for each page
    - Injects correct script references
 
-## TypeScript Support
+## Similar Plugins / Inspiration
 
-This plugin is written in TypeScript and includes type definitions.
+This plugin was inspired by and references the following excellent projects:
 
-## Contributing
+- [vite-plugin-mpa](https://github.com/IndexXuan/vite-plugin-mpa) - Out-of-box multi-page application plugin for Vite
+- [vite-plugin-html-template](https://github.com/IndexXuan/vite-plugin-html-template) - HTML template plugin for Vite
+- [vite-plugin-html](https://github.com/vbenjs/vite-plugin-html) - A Vite plugin for processing HTML
+- [vite-plugin-virtual-html](https://github.com/windsonR/vite-plugin-virtual-html) - A Vite plugin that enables virtual HTML files
+- [vite-plugin-virtual-mpa](https://github.com/emosheeep/vite-plugin-virtual-mpa) - An out-of-box MPA plugin for Vite with virtual HTML support
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Author
-
-- **zhoumutou** - [GitHub](https://github.com/zhoumutou)
-
----
-
-Made with ❤️ for better Vite MPA experiences.
+Thanks to all these projects for providing valuable references and inspiration.
