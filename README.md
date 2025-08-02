@@ -35,16 +35,12 @@ pnpm add @zhoumutou/vite-plugin-mpa -D
 Add the plugin to your `vite.config.ts`:
 
 ```typescript
-import vue from '@vitejs/plugin-vue'
 import mpa from '@zhoumutou/vite-plugin-mpa'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [
-    vue(),
-    mpa({
-      // options (optional)
-    })
+    mpa()
   ]
 })
 ```
@@ -72,7 +68,7 @@ This setup will generate the following pages:
 - `about.html` (accessible as `/about`)
 - `user.html` (accessible as `/user`)
 
-## Configuration
+## Options
 
 The plugin accepts the following options:
 
