@@ -155,11 +155,13 @@ function resolvePages(pagesDir: string, entryFile: string, defaultTemplate: stri
 
     // Try to find a template in the same directory, fall back to default location
     let template = path.join(absolutePagesDir, entryDir, 'index.html')
-    if (!existsSync(template) && defaultTemplate && existsSync(defaultTemplate)) {
-      template = defaultTemplate
-    }
-    else {
-      template = ''
+    if (!existsSync(template)) {
+      if (defaultTemplate && existsSync(defaultTemplate)) {
+        template = defaultTemplate
+      }
+      else {
+        template = ''
+      }
     }
 
     return {
