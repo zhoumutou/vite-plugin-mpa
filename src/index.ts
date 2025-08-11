@@ -1,208 +1,198 @@
 /**
  * Vite Plugin for Multi-Page Applications (MPA)
- * This plugin automatically configures entry points for MPA projects,
- * handles HTML templates, and sets up development server routing.
+ * - Auto-discovers per-page entries (e.g., src/pages\/**\/main.ts)
+ * - Injects entry <script type="module"> into HTML (dev/build)
+ * - Configures Rollup multiple HTML inputs for production
+ *
+ * Notes:
+ * - Dev server serves HTML via custom middleware, then runs transformIndexHtml.
+ * - Build phase provides virtual HTML files as Rollup inputs via resolveId/load.
  */
+
 import type { Plugin, ViteDevServer } from 'vite'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
 /**
- * Represents a single page in the MPA structure
+ * Represents a single page in the MPA structure.
  */
 interface Page {
-  /** Page identifier, used for routing and output filename */
+  /** Page identifier, used for routing and output filename. */
   name: string
-  /** Path to the JavaScript entry file */
+  /** Path to the JavaScript entry file (absolute from Vite root with leading "/"). */
   entry: string
-  /** Path to the HTML template file */
+  /** Absolute path to the HTML template file (or empty string to use fallback). */
   template: string
 }
 
-/** Collection of pages indexed by name */
+/** Collection of pages indexed by name. */
 type Pages = Record<string, Page>
 
 /**
- * Default HTML template used when no template file is found
+ * Default HTML template used when no template file is found.
  */
 const templateFallback = `
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vite MPA</title>
   </head>
   <body>
     <div id="app"></div>
   </body>
 </html>`.trim()
 
-// Caches for template and entry content to avoid repeated file reads
+// Caches for template and entry content to avoid repeated file reads in dev.
 const templateContentCache = new Map<string, string>()
 const entryContentCache = new Map<string, string>()
 
 /**
- * Loads HTML content for a page, injecting the entry script
- * @param page The page configuration object
- * @param isDev Whether running in development mode
- * @returns The processed HTML content
+ * Load HTML content for a page and inject the <script type="module" src="..."> before </body>.
+ * - In dev mode, returns cached HTML if available to reduce FS reads.
+ * - In build mode, reads template (or uses fallback) and injects the entry script.
  */
 function loadHtmlContent(page: Page, isDev = false) {
   const { entry, template } = page
 
-  // In dev mode, try to use cached content first
+  // In dev mode, return cached fully-built HTML if present.
   if (isDev) {
-    const entryContent = entryContentCache.get(entry)
-    if (entryContent) {
-      return entryContent
-    }
+    const cached = entryContentCache.get(entry)
+    if (cached)
+      return cached
   }
 
-  // Try to get template content from cache
+  // Try read from template cache (only cache when a template path exists).
   let htmlContent = template ? templateContentCache.get(template) : templateFallback
   if (!htmlContent) {
-    if (existsSync(template)) {
+    if (template && existsSync(template)) {
       try {
         htmlContent = readFileSync(template, 'utf-8')
       }
       catch (error) {
-        console.error(`Failed to read template: ${template}`, error)
+        console.error(`[vite-plugin-mpa] Failed to read template: ${template}`, error)
       }
     }
-
-    // Fall back to default template if needed
+    // Fall back to default template if needed.
     htmlContent = htmlContent || templateFallback
-    templateContentCache.set(template, htmlContent)
+    // Cache template file content only when a template path exists.
+    if (template)
+      templateContentCache.set(template, htmlContent)
   }
 
-  // Inject the entry script before closing body tag
+  // Normalize entry path to POSIX for HTML usage.
+  const entrySrc = entry.replace(/\\/g, '/')
+
+  // Inject the entry script before closing body tag.
   htmlContent = htmlContent.replace(
-    '</body>',
-    `<script type="module" src="${entry.replace(/\\/g, '/')}"></script>\n  </body>`,
+    /<\/body>/i,
+    `<script type="module" src="${entrySrc}"></script>\n  </body>`,
   )
 
-  // Cache the result in development mode
-  if (isDev) {
+  // Cache final HTML in dev.
+  if (isDev)
     entryContentCache.set(entry, htmlContent)
-  }
 
   return htmlContent
 }
 
 /**
  * Recursively find all files named `entryFile` under `rootDir` and its subdirectories.
- * Returns an array of relative paths (relative to rootDir) for each found entry file.
- * @param rootDir The root directory to start searching from (absolute path)
- * @param entryFile The entry file name to look for (e.g. 'main.ts')
- * @returns Array of relative file paths matching the entry file name
+ * Returns an array of relative POSIX paths (relative to rootDir) for each found entry file.
  */
 function findEntryFiles(rootDir: string, entryFile: string) {
   const result: string[] = []
 
-  function walk(dir: string, relDir = '') {
-    const files = readdirSync(dir)
-    for (const file of files) {
-      const fullPath = path.join(dir, file)
-      const relPath = path.join(relDir, file)
-
-      if (statSync(fullPath).isDirectory()) {
-        walk(fullPath, relPath)
+  function walk(absDir: string, relDir = '') {
+    // Use Dirent to avoid extra stat calls.
+    const entries = readdirSync(absDir, { withFileTypes: true })
+    for (const ent of entries) {
+      const abs = path.join(absDir, ent.name)
+      const rel = path.join(relDir, ent.name)
+      if (ent.isDirectory()) {
+        walk(abs, rel)
       }
-      else if (file === entryFile) {
-        result.push(relPath)
+      else if (ent.isFile() && ent.name === entryFile) {
+        // Store POSIX-style relative path.
+        result.push(rel.split(path.sep).join('/'))
       }
     }
   }
 
   walk(rootDir)
-
   return result
 }
 
 /**
- * Discovers and resolves page configurations from the file system
- * @param pagesDir Directory containing page entries
- * @param entryFile Filename pattern for entry files
- * @param defaultTemplate Optional path to a default HTML template
- * @returns Object mapping page names to their configurations
+ * Discover and resolve page configurations from the file system.
  *
- * @remarks
- * Template resolution follows this priority:
- * 1. First looks for `index.html` in the same directory as the entry file
- * 2. If not found and defaultTemplate is provided, uses that template
- * 3. If neither exists, sets template to empty string, which will use the built-in fallback
+ * Template resolution priority:
+ * 1) index.html located alongside the entry file directory
+ * 2) defaultTemplate, if provided and exists
+ * 3) built-in fallback template (empty template path)
  *
- * Page naming convention:
- * - Entry files in the root directory become the "index" page
- * - Entry files in subdirectories use the directory name as the page name
- * - Nested directories use the relative path as the page name (e.g., "admin/dashboard")
- *
- * The returned Pages object uses these names as keys, making them accessible as:
- * - `/` or `/index.html` for the index page
- * - `/pageName.html` for other pages
+ * Page naming:
+ * - Root entry file becomes "index"
+ * - Nested entries use directory structure as page name (e.g., "admin/dashboard")
  */
 function resolvePages(pagesDir: string, entryFile: string, defaultTemplate: string) {
   const cwd = process.cwd()
-  const absolutePagesDir = path.resolve(cwd, pagesDir)
-  const matches = findEntryFiles(absolutePagesDir, entryFile)
+  const absPagesDir = path.resolve(cwd, pagesDir)
+  const matches = findEntryFiles(absPagesDir, entryFile)
 
-  const items = matches.map((item) => {
-    const entryDir = path.dirname(item)
-
-    // Use directory name as page name, or 'index' for root
+  const items = matches.map((relPosix) => {
+    const entryDir = path.posix.dirname(relPosix)
     const name = entryDir === '.' ? 'index' : entryDir
-    const entry = `/${path.join(pagesDir, item)}`
+    // Build an absolute-like path from Vite root with leading slash for dev server to resolve.
+    const entry = `/${path.posix.join(pagesDir.split(path.sep).join('/'), relPosix)}`
 
-    // Try to find a template in the same directory, fall back to default location
-    let template = path.join(absolutePagesDir, entryDir, 'index.html')
+    // Prefer template colocated with entry.
+    let template = path.join(absPagesDir, entryDir.split('/').join(path.sep), 'index.html')
     if (!existsSync(template)) {
       if (defaultTemplate && existsSync(defaultTemplate)) {
         template = defaultTemplate
       }
       else {
-        template = ''
+        template = '' // Use built-in fallback
       }
     }
 
-    return {
-      name,
-      entry,
-      template,
-    }
+    return { name, entry, template }
   })
 
   return Object.fromEntries(items.map(it => [it.name, it]))
 }
 
 /**
- * Parses page metadata from a URL
- * @param originalUrl The original request URL
- * @returns Object containing the normalized URL and page name
+ * Parse page metadata from a URL (dev server).
+ * - Normalizes "/" to "/index.html"
+ * - Extracts page name from "/name(.html)?"
  */
 function parsePageMeta(originalUrl = '/') {
   const url = originalUrl.replace(/^\/(\?|$)/, '/index.html$1')
   const name = url.match(/^\/([^?]*?)(?:\.html)?(?:\?.*)?$/)?.[1] ?? ''
-
   return { url, name }
 }
 
 const PLUGIN_NAME = 'vite-plugin-mpa'
 
 /**
- * Creates a Vite plugin for development mode
- * @param pages Collection of page configurations
- * @returns Vite plugin for development
+ * Create the dev plugin:
+ * - Set appType to "mpa"
+ * - Serve HTML via middleware and apply transformIndexHtml
+ * - Invalidate caches on HTML file change
  */
 function createDevPlugin(pages: Pages): Plugin {
   return {
-    name: PLUGIN_NAME,
+    name: `${PLUGIN_NAME}:serve`,
+    apply: 'serve',
     config() {
-      return {
-        appType: 'mpa',
-      }
+      return { appType: 'mpa' }
     },
     configureServer(server: ViteDevServer) {
-      // Clear caches when HTML files change
+      // Clear caches when HTML files change.
       server.watcher.on('change', (file) => {
         if (file.endsWith('.html')) {
           templateContentCache.clear()
@@ -210,52 +200,47 @@ function createDevPlugin(pages: Pages): Plugin {
         }
       })
 
-      // Handle HTML requests with custom middleware
+      // Middleware to respond with generated HTML.
       server.middlewares.use(async (req, res, next) => {
-        const isHtmlRequest = req.headers.accept?.includes('text/html')
-        if (!isHtmlRequest) {
+        const isHtml = req.headers.accept?.includes('text/html')
+        if (!isHtml)
           return next()
-        }
 
         const { url, name } = parsePageMeta(req.originalUrl)
 
-        const response = (code: number, content: string) => {
-          res.writeHead(code, { 'Content-Type': 'text/html' })
-          res.end(content)
-        }
-
-        // Find the requested page
         const page = pages[name]
         if (!page) {
-          response(404, 'Page not found')
+          res.writeHead(404, { 'Content-Type': 'text/html' })
+          res.end('Page not found')
           return
         }
 
-        // Load and transform HTML content
         const htmlRaw = loadHtmlContent(page, true)
         if (!htmlRaw) {
-          response(404, 'Page not found')
+          res.writeHead(404, { 'Content-Type': 'text/html' })
+          res.end('Page not found')
           return
         }
 
-        const htmlContent = await server.transformIndexHtml(url, htmlRaw)
-        response(200, htmlContent)
+        const htmlTransformed = await server.transformIndexHtml(url, htmlRaw)
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(htmlTransformed)
       })
     },
   }
 }
 
 /**
- * Creates a Vite plugin for production build
- * @param pages Collection of page configurations
- * @returns Vite plugin for production
+ * Create the build plugin:
+ * - Provide Rollup inputs for each page (virtual HTML entries)
+ * - Resolve and load HTML content for those entries
  */
 function createProdPlugin(pages: Pages): Plugin {
-  // Configure entry points for each page
   const input = Object.fromEntries(Object.keys(pages).map(page => [page, `${page}.html`]))
 
   return {
-    name: PLUGIN_NAME,
+    name: `${PLUGIN_NAME}:build`,
+    apply: 'build',
     config() {
       return {
         appType: 'mpa',
@@ -266,52 +251,48 @@ function createProdPlugin(pages: Pages): Plugin {
         },
       }
     },
-    // Handle .html files as entry points
+    // Treat ".html" IDs as virtual entry modules.
     resolveId(id: string) {
       return id.endsWith('.html') ? id : null
     },
-    // Load HTML content for entry points
+    // Provide the HTML content for virtual entries.
     load(id: string) {
-      if (!id.endsWith('.html')) {
+      if (!id.endsWith('.html'))
         return null
-      }
-
-      const name = id.replace('.html', '')
+      const name = id.slice(0, -'.html'.length)
       const page = pages[name]
-
-      return page ? loadHtmlContent(page) : null
+      return page ? loadHtmlContent(page, false) : null
     },
   }
 }
 
 /**
- * Configuration options for the MPA plugin
+ * Plugin options.
  */
 export interface Options {
-  /** Directory containing page entries (default: 'src/pages') */
-  pagesDir?: string
-  /** Filename pattern for entry files (default: 'main.ts') */
-  entryFile?: string
-  /** Custom default HTML template (default: 'src/index.html') */
+  /** Directory containing page entries (default: 'src/pages'). */
+  pages?: string
+  /** Entry file name to search for (default: 'main.ts'). */
+  entry?: string
+  /** Default HTML template file path (default: 'src/index.html'). */
   template?: string
 }
 
 /**
- * Multi-Page Application (MPA) plugin for Vite
- * Automatically configures entry points and handles HTML templates
- * @param options Plugin configuration options
- * @returns Vite plugin instance
+ * Multi-Page Application (MPA) plugin for Vite.
+ * - Auto-discovers pages
+ * - Serves/transforms HTML in dev
+ * - Provides virtual HTML entries in build
  */
 export default function VitePluginMpa(options: Options = {}) {
   const {
-    pagesDir = 'src/pages',
-    entryFile = 'main.ts',
+    pages: pagesDir = 'src/pages',
+    entry = 'main.ts',
     template = 'src/index.html',
   } = options
 
-  // Discover pages from file system
-  const pages = resolvePages(pagesDir, entryFile, template)
+  const pages = resolvePages(pagesDir, entry, template)
 
-  // Return appropriate plugin based on environment
-  return process.env.NODE_ENV === 'development' ? createDevPlugin(pages) : createProdPlugin(pages)
+  // Return both dev and build plugins; Vite will apply based on "apply" field.
+  return [createDevPlugin(pages), createProdPlugin(pages)]
 }
