@@ -99,20 +99,20 @@ src/index.html          # 默认模板（可选）
 interface Options {
   /**
    * 页面入口所在目录
-   * 默认值："src/pages"
+   * @default "src/pages"
    */
   pages?: string
 
   /**
    * 要匹配的入口文件名（或列表）
    * 可为字符串或字符串数组（如 ["main.tsx","main.ts","main.jsx","main.js"]）
-   * 默认值："main.ts"
+   * @default "main.ts"
    */
   entry?: string | string[]
 
   /**
    * 当页面没有同目录模板时使用的默认 HTML 模板路径
-   * 默认值："src/index.html"
+   * @default "src/index.html"
    */
   template?: string
 }

@@ -109,20 +109,18 @@ The final HTML gets the entry `<script type="module">` injected right before `</
 interface Options {
   /**
    * Directory containing page entries.
-   * Default: "src/pages"
+   * @default "src/pages"
    */
   pages?: string
-
   /**
    * Entry file name(s) to search for.
    * Accepts a string or an array (e.g., ["main.tsx","main.ts","main.jsx","main.js"]).
-   * Default: "main.ts"
+   * @default "main.ts"
    */
   entry?: string | string[]
-
   /**
-   * Default HTML template file path used when a page has no colocated index.html.
-   * Default: "src/index.html"
+   * Default HTML template file path (fallback when colocated template not present).
+   * @default "src/index.html"
    */
   template?: string
 }
